@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Agendamento Psicóloga</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #5C6BC0; --primary-dark: #3949AB; --primary-light: #E8EAF6;
+      --success: #43A047; --success-light: #E8F5E9;
+      --danger: #E53935; --danger-light: #FFEBEE;
+      --warning: #FB8C00;
+      --gray-light: #F5F5F5; --border: #E0E0E0;
+      --text: #212121; --text-secondary: #616161;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--gray-light); color: var(--text); min-height: 100vh; }
+
+    /* Header */
+    .header { background: var(--primary-dark); color: white; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-title { font-size: 18px; font-weight: 700; }
+    .badge-admin { background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px; font-size: 11px; letter-spacing: 1px; }
+    .btn-logout { background: rgba(255,255,255,0.2); border: none; color: white; padding: 7px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; }
+
+    /* Layout */
+    .layout { display: flex; min-height: calc(100vh - 52px); }
+    .sidebar { width: 210px; background: white; border-right: 1px solid var(--border); padding: 12px 0; flex-shrink: 0; }
+    .main { flex: 1; padding: 24px; overflow-x: hidden; }
+
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 11px 20px; cursor: pointer; color: var(--text-secondary); font-size: 14px; font-weight: 500; border-left: 3px solid transparent; }
+    .nav-item:hover { background: var(--gray-light); color: var(--text); }
+    .nav-item.active { background: var(--primary-light); color: var(--primary-dark); border-left-color: var(--primary); font-weight: 600; }
+    .nav-icon { font-size: 17px; }
+
+    /* Cards */
+    .card { background: white; border-radius: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 20px; }
+    .card-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .card-title { font-size: 15px; font-weight: 700; }
+    .card-body { padding: 20px; }
+
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .stat-card { background: white; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
+    .stat-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 28px; font-weight: 800; margin-top: 4px; }
+    .stat-card.blue .stat-value { color: var(--primary); }
+    .stat-card.green .stat-value { color: var(--success); }
+    .stat-card.orange .stat-value { color: var(--warning); }
+
+    /* Buttons */
+    .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: white; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+    .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-block { display: block; width: 100%; padding: 13px; font-size: 15px; justify-content: center; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--gray-light); }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: var(--success-light); color: var(--success); }
+    .badge-red { background: var(--danger-light); color: var(--danger); }
+    .badge-blue { background: var(--primary-light); color: var(--primary-dark); }
+    .badge-gray { background: var(--gray-light); color: var(--text-secondary); }
+
+    /* Forms */
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; }
+    .form-input:focus { border-color: var(--primary); }
+
+    /* Alert */
+    .alert { padding: 11px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+    .alert-error { background: var(--danger-light); color: var(--danger); }
+    .alert-success { background: var(--success-light); color: var(--success); }
+
+    /* Time chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .chip { background: var(--primary-light); color: var(--primary-dark); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+    .chip-rm { cursor: pointer; opacity: 0.6; }
+    .chip-rm:hover { opacity: 1; }
+
+    /* Login */
+    .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #3949AB 0%, #5C6BC0 100%); }
+    .login-box { background: white; border-radius: 20px; padding: 36px 28px; width: 340px; box-shadow: 0 12px 40px rgba(0,0,0,0.2); text-align: center; }
+    .login-box .icon { font-size: 44px; margin-bottom: 10px; }
+    .login-box h1 { font-size: 20px; margin-bottom: 4px; }
+    .login-box p { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
+    .modal { background: white; border-radius: 16px; padding: 28px; width: 100%; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    /* Utils */
+    .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
+    .empty-state-icon { font-size: 40px; margin-bottom: 10px; }
+    .loading { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 10px; color: var(--text-secondary); }
+    .spinner { width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .config-warning { background: #FFF3E0; border: 2px solid #FB8C00; border-radius: 16px; padding: 20px; margin: 24px auto; max-width: 600px; }
+    .config-warning h3 { color: #E65100; margin-bottom: 8px; }
+    .config-warning code { background: #FFE0B2; padding: 2px 6px; border-radius: 4px; font-size: 13px; display: block; margin: 4px 0; word-break: break-all; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     ⚙️  CONFIGURAÇÃO — Preencha com os dados do seu Supabase
+     ══════════════════════════════════════════════════════════ -->
+<script>
+  const SUPABASE_URL          = 'COLE_AQUI_SUA_SUPABASE_URL';
+  const SUPABASE_SERVICE_KEY  = 'COLE_AQUI_SUA_SUPABASE_SERVICE_ROLE_KEY';
+  const NOME_EMPRESA          = 'Minha Empresa';
+</script>
+<!-- ══════════════════════════════════════════════════════════ -->
+
+<div id="app"></div>
+
+<script>
+if (SUPABASE_URL === 'COLE_AQUI_SUA_SUPABASE_URL') {
+  document.getElementById('app').innerHTML = `
+    <div style="padding:24px">
+      <div class="config-warning">
+        <h3>⚙️ Configure o sistema</h3>
+        <p style="font-size:14px;margin-bottom:12px">Abra o arquivo <strong>admin.html</strong> e preencha:</p>
+        <label style="font-size:12px;font-weight:600">SUPABASE_URL:</label>
+        <code>https://seuprojetoid.supabase.co</code>
+        <label style="font-size:12px;font-weight:600">SUPABASE_SERVICE_ROLE_KEY:</label>
+        <code>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</code>
+        <p style="font-size:13px;margin-top:12px;color:#666">Encontre em: Supabase → Settings → API → <strong>service_role</strong> key</p>
+      </div>
+    </div>`;
+  throw new Error('Configure o Supabase primeiro');
+}
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// ─── SHA-256 nativo ───────────────────────────────────────────
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ─── Estado ───────────────────────────────────────────────────
+let adminLoggedIn = sessionStorage.getItem('ag_admin') === '1';
+let st = {
+  tab: 'dashboard',
+  stats: null,
+  slots: [], bookings: [], codes: [],
+  loading: false, error: null, success: null,
+  filterDate: '',
+  pendingTimes: [],
+  confirmDelete: null,
+  showCodeModal: false, newCode: { code:'', name:'', email:'' },
+  showPassModal: false,
+};
+
+function logout() { sessionStorage.removeItem('ag_admin'); adminLoggedIn = false; render(); }
+function el(id)    { return document.getElementById(id); }
+
+function fmtDate(d)  { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day:'2-digit', month:'2-digit', year:'numeric' }) : '—'; }
+function fmtDT(dt)   { return dt ? new Date(dt).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'; }
+
+// ─── Dados ────────────────────────────────────────────────────
+async function loadStats() {
+  const [{ count: slots }, { count: booked }, { count: codes }] = await Promise.all([
+    sb.from('time_slots').select('*', { count: 'exact', head: true }),
+    sb.from('bookings').select('*', { count: 'exact', head: true }),
+    sb.from('access_codes').select('*', { count: 'exact', head: true }).eq('active', true),
+  ]);
+  const today = new Date().toISOString().split('T')[0];
+  const { count: todaySlots }  = await sb.from('time_slots').select('*', { count: 'exact', head: true }).eq('date', today);
+  const { data: todayBookings } = await sb.from('bookings').select('time_slots!inner(date)').eq('time_slots.date', today);
+  st.stats = { slots: slots||0, booked: booked||0, codes: codes||0, todaySlots: todaySlots||0, todayBooked: todayBookings?.length||0 };
+}
+
+async function loadSlots() {
+  st.loading = true; render();
+  let q = sb.from('time_slots').select('id,date,time,bookings(id,code_id,access_codes(name,email),booked_at)').order('date').order('time');
+  if (st.filterDate) q = q.eq('date', st.filterDate);
+  const { data, error } = await q;
+  if (error) st.error = error.message;
+  else st.slots = (data || []).map(s => ({ ...s, booking: s.bookings?.[0] || null }));
+  st.loading = false; render();
+}
+
+async function loadBookings() {
+  st.loading = true; render();
+  const { data, error } = await sb.from('bookings')
+    .select('id,booked_at,access_codes(name,email),time_slots(date,time)')
+    .order('time_slots(date)').order('time_slots(time)');
+  if (error) st.error = error.message;
+  else st.bookings = data || [];
+  st.loading = false; render();
+}
+
+async function loadCodes() {
+  st.loading = true; render();
+  const { data, error } = await sb.from('access_codes')
+    .select('id,code,name,email,active,created_at,bookings(id)')
+    .order('name');
+  if (error) st.error = error.message;
+  else st.codes = (data || []).map(c => ({ ...c, hasBooking: c.bookings?.length > 0 }));
+  st.loading = false; render();
+}
+
+async function loadTab(tab) {
+  st.tab = tab; st.error = null; st.success = null;
+  if (tab === 'dashboard') await loadStats();
+  if (tab === 'slots')     await loadSlots();
+  if (tab === 'bookings')  await loadBookings();
+  if (tab === 'codes')     await loadCodes();
+  render();
+}
+
+// ─── Render ───────────────────────────────────────────────────
+function render() {
+  const app = el('app');
+  if (!adminLoggedIn) { app.innerHTML = renderLogin(); bindLogin(); return; }
+  app.innerHTML = renderLayout();
+  bindLayout();
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────
+function renderLogin() {
+  return `
+    <div class="login-screen">
+      <div class="login-box">
+        <div class="icon">🔐</div>
+        <h1>Painel Admin</h1>
+        <p>${NOME_EMPRESA}</p>
+        <div id="login-err" class="alert alert-error" style="display:none"></div>
+        <div class="form-group" style="margin-bottom:14px;text-align:left">
+          <label class="form-label">Senha</label>
+          <input id="login-pass" type="password" class="form-input" style="width:100%;padding:13px" placeholder="Digite a senha">
+        </div>
+        <button id="login-btn" class="btn btn-primary btn-block">Entrar</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindLogin() {
+  const btn = el('login-btn'), input = el('login-pass'), err = el('login-err');
+  async function doLogin() {
+    const password = input.value;
+    if (!password) return;
+    btn.disabled = true; btn.textContent = 'Verificando...'; err.style.display = 'none';
+    try {
+      const hash = await sha256(password);
+      const { data, error } = await sb.from('admin_config').select('password_hash').eq('id', 1).single();
+      if (error) throw new Error('Erro ao verificar senha.');
+      if (data.password_hash !== hash) throw new Error('Senha incorreta.');
+      sessionStorage.setItem('ag_admin', '1');
+      adminLoggedIn = true;
+      await loadTab('dashboard');
+    } catch(e) {
+      err.style.display = 'block'; err.textContent = '❌ ' + e.message;
+      btn.disabled = false; btn.textContent = 'Entrar';
+    }
+  }
+  btn.addEventListener('click', doLogin);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  setTimeout(() => input.focus(), 50);
+}
+
+// ─── LAYOUT ───────────────────────────────────────────────────
+function renderLayout() {
+  const tabs = [
+    { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'slots',     icon: '📅', label: 'Horários'  },
+    { id: 'bookings',  icon: '📋', label: 'Agendamentos' },
+    { id: 'codes',     icon: '🔑', label: 'Códigos' },
+  ];
+  const nav = tabs.map(t => `<div class="nav-item ${st.tab===t.id?'active':''}" data-tab="${t.id}"><span class="nav-icon">${t.icon}</span>${t.label}</div>`).join('');
+
+  let main = '';
+  if (st.tab==='dashboard') main = renderDashboard();
+  if (st.tab==='slots')     main = renderSlotsTab();
+  if (st.tab==='bookings')  main = renderBookingsTab();
+  if (st.tab==='codes')     main = renderCodesTab();
+
+  return `
+    <div class="header">
+      <div class="header-left"><span class="header-title">🧠 Agendamento</span><span class="badge-admin">ADMIN</span></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-logout" id="btn-change-pass">🔑 Senha</button>
+        <button class="btn-logout" onclick="logout()">Sair</button>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="sidebar">${nav}</div>
+      <div class="main">
+        ${st.error   ? `<div class="alert alert-error">❌ ${st.error}</div>` : ''}
+        ${st.success ? `<div class="alert alert-success">✅ ${st.success}</div>` : ''}
+        ${main}
+      </div>
+    </div>
+    ${st.confirmDelete ? renderDeleteModal() : ''}
+    ${st.showCodeModal  ? renderCodeModal()  : ''}
+    ${st.showPassModal  ? renderPassModal()  : ''}
+  `;
+}
+
+// ── Dashboard ──
+function renderDashboard() {
+  if (!st.stats) return `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
+  const s = st.stats;
+  return `
+    <h2 style="margin-bottom:20px">📊 Dashboard</h2>
+    <div class="stats-grid">
+      <div class="stat-card blue"><div class="stat-label">Códigos Ativos</div><div class="stat-value">${s.codes}</div></div>
+      <div class="stat-card green"><div class="stat-label">Agendamentos</div><div class="stat-value">${s.booked}</div></div>
+      <div class="stat-card orange"><div class="stat-label">Horários Cadastrados</div><div class="stat-value">${s.slots}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Hoje</div><div class="stat-value">${s.todayBooked}/${s.todaySlots}</div></div>
+    </div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:32px;color:var(--text-secondary)">
+      <div style="font-size:36px;margin-bottom:10px">👋</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Bem-vindo ao Painel Administrativo</div>
+      <div style="font-size:14px">Use o menu ao lado para gerenciar horários, agendamentos e códigos de acesso.</div>
+    </div></div>
+  `;
+}
+
+// ── Horários ──
+function renderSlotsTab() {
+  const today = new Date().toISOString().split('T')[0];
+  const times = Array.from({length:19},(_,i)=>{ const h=Math.floor(i/2)+8,m=i%2===0?'00':'30'; return `${String(h).padStart(2,'0')}:${m}`; });
+  const byDate = {};
+  for (const s of st.slots) { if (!byDate[s.date]) byDate[s.date]=[]; byDate[s.date].push(s); }
+
+  const chipsHtml = st.pendingTimes.map(t => `<div class="chip">${t}<span class="chip-rm" data-time="${t}">×</span></div>`).join('');
+
+  let slotsHtml = st.loading
+    ? `<div class="loading"><div class="spinner"></div> Carregando...</div>`
+    : Object.keys(byDate).length === 0
+    ? `<div class="empty-state"><div class="empty-state-icon">📅</div><div>Nenhum horário cadastrado${st.filterDate?' para esta data':''}.</div></div>`
+    : Object.entries(byDate).sort().map(([date,list]) => {
+        const rows = list.map(s => `<tr>
+          <td><strong>${s.time?.slice(0,5)}</strong></td>
+          <td>${s.booking ? '<span class="badge badge-green">Agendado</span>' : '<span class="badge badge-gray">Disponível</span>'}</td>
+          <td>${s.booking?.access_codes?.name || '—'}</td>
+          <td>${s.booking?.booked_at ? fmtDT(s.booking.booked_at) : '—'}</td>
+          <td><button class="btn btn-danger btn-sm" data-del-slot="${s.id}" data-lbl="${fmtDate(date)} ${s.time?.slice(0,5)}">🗑️ Remover</button></td>
+        </tr>`).join('');
+        return `<div class="card">
+          <div class="card-header"><span class="card-title">📅 ${fmtDate(date)}</span><span class="badge badge-blue">${list.length} horário(s)</span></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Horário</th><th>Status</th><th>Colaborador</th><th>Agendado em</th><th>Ação</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>
+        </div>`;
+      }).join('');
+
+  return `
+    <h2 style="margin-bottom:20px">📅 Gerenciar Horários</h2>
+    <div class="card">
+      <div class="card-header"><span class="card-title">➕ Adicionar Horários</span></div>
+      <div class="card-body">
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group"><label class="form-label">Data</label><input type="date" id="new-slot-date" class="form-input" min="${today}" value="${st.filterDate||today}"></div>
+          <div class="form-group"><label class="form-label">Horário</label><select id="new-slot-time" class="form-input">${times.map(t=>`<option>${t}</option>`).join('')}</select></div>
+          <button class="btn btn-outline" id="btn-add-time">+ Adicionar</button>
+        </div>
+        ${st.pendingTimes.length ? `<div class="chips">${chipsHtml}</div><button class="btn btn-primary" id="btn-save-slots">💾 Salvar ${st.pendingTimes.length} horário(s)</button>` : ''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔍 Filtrar por Data</span></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Data</label><input type="date" id="filter-date" class="form-input" value="${st.filterDate}"></div>
+          <button class="btn btn-primary" id="btn-filter">Filtrar</button>
+          ${st.filterDate ? '<button class="btn btn-outline" id="btn-clear">Limpar</button>' : ''}
+        </div>
+      </div>
+    </div>
+    ${slotsHtml}
+  `;
+}
+
+// ── Agendamentos ──
+function renderBookingsTab() {
+  if (st.loading) return `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
+  const rows = st.bookings.map(b => `<tr>
+    <td><strong>${b.access_codes?.name||'—'}</strong></td>
+    <td>${b.access_codes?.email||'—'}</td>
+    <td>${fmtDate(b.time_slots?.date)}</td>
+    <td><strong>${b.time_slots?.time?.slice(0,5)||'—'}</strong></td>
+    <td>${fmtDT(b.booked_at)}</td>
+    <td><button class="btn btn-danger btn-sm" data-del-booking="${b.id}" data-lbl="${b.access_codes?.name} — ${fmtDate(b.time_slots?.date)}">Cancelar</button></td>
+  </tr>`).join('');
+
+  return `
+    <h2 style="margin-bottom:20px">📋 Agendamentos</h2>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Total: ${st.bookings.length} agendamento(s)</span>
+        <button class="btn btn-outline btn-sm" id="btn-refresh">🔄 Atualizar</button>
+      </div>
+      ${st.bookings.length===0
+        ? '<div class="empty-state"><div class="empty-state-icon">📋</div><div>Nenhum agendamento ainda.</div></div>'
+        : `<div class="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Data</th><th>Horário</th><th>Agendado em</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+    </div>
+  `;
+}
+
+// ── Códigos ──
+function renderCodesTab() {
+  if (st.loading) return `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
+  const rows = st.codes.map(c => `<tr>
+    <td><code style="background:var(--primary-light);padding:3px 8px;border-radius:6px;font-size:13px">${c.code}</code></td>
+    <td><strong>${c.name}</strong></td>
+    <td>${c.email}</td>
+    <td>${c.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-red">Inativo</span>'}</td>
+    <td>${c.hasBooking ? '<span class="badge badge-blue">Sim</span>' : '<span class="badge badge-gray">Não</span>'}</td>
+    <td><div style="display:flex;gap:6px">
+      <button class="btn btn-outline btn-sm" data-toggle="${c.id}" data-active="${c.active}">${c.active ? '⏸ Desativar' : '▶ Ativar'}</button>
+      <button class="btn btn-danger btn-sm" data-del-code="${c.id}" data-lbl="${c.name} (${c.code})">🗑️</button>
+    </div></td>
+  </tr>`).join('');
+
+  return `
+    <h2 style="margin-bottom:20px">🔑 Códigos de Acesso</h2>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Total: ${st.codes.length} código(s)</span>
+        <button class="btn btn-primary" id="btn-new-code">+ Novo Código</button>
+      </div>
+      ${st.codes.length===0
+        ? '<div class="empty-state"><div class="empty-state-icon">🔑</div><div>Nenhum código cadastrado ainda.</div></div>'
+        : `<div class="table-wrap"><table><thead><tr><th>Código</th><th>Nome</th><th>E-mail</th><th>Status</th><th>Agendou?</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+    </div>
+  `;
+}
+
+// ── Modais ──
+function renderDeleteModal() {
+  const d = st.confirmDelete;
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">Confirmar Remoção</div>
+    <div class="alert alert-error" style="margin:12px 0">🗑️ ${d.label}</div>
+    ${d.type==='slot' ? '<p style="font-size:13px;color:var(--text-secondary)">Se houver agendamento neste horário, será cancelado.</p>' : ''}
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="del-cancel">Cancelar</button>
+      <button class="btn btn-primary" style="background:var(--danger)" id="del-confirm">Confirmar</button>
+    </div>
+  </div></div>`;
+}
+
+function renderCodeModal() {
+  const c = st.newCode;
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">➕ Novo Código</div>
+    <div id="code-err" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Código de Acesso</label>
+      <input id="nc-code" class="form-input" style="width:100%;letter-spacing:2px;text-transform:uppercase" type="text" placeholder="Ex: ABC123" maxlength="20" value="${c.code}">
+      <span style="font-size:11px;color:var(--text-secondary)">Letras e números, sem espaços</span>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Nome do Colaborador</label>
+      <input id="nc-name" class="form-input" style="width:100%" type="text" placeholder="Nome Completo" value="${c.name}">
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">E-mail</label>
+      <input id="nc-email" class="form-input" style="width:100%" type="email" placeholder="email@empresa.com" value="${c.email}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="code-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="code-save">✅ Criar</button>
+    </div>
+  </div></div>`;
+}
+
+function renderPassModal() {
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">🔑 Alterar Senha Admin</div>
+    <div id="pass-err" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Nova Senha (mín. 6 caracteres)</label>
+      <input id="new-pass" class="form-input" style="width:100%" type="password" placeholder="Nova senha">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="pass-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="pass-save">Salvar</button>
+    </div>
+  </div></div>`;
+}
+
+// ─── Bind ──────────────────────────────────────────────────────
+function bindLayout() {
+  document.querySelectorAll('[data-tab]').forEach(e => e.addEventListener('click', () => loadTab(e.dataset.tab)));
+  el('btn-change-pass')?.addEventListener('click', () => { st.showPassModal = true; render(); });
+
+  // Slots
+  el('btn-add-time')?.addEventListener('click', () => {
+    const t = el('new-slot-time').value;
+    if (!st.pendingTimes.includes(t)) { st.pendingTimes.push(t); st.pendingTimes.sort(); render(); }
+  });
+  document.querySelectorAll('.chip-rm').forEach(b => b.addEventListener('click', () => {
+    st.pendingTimes = st.pendingTimes.filter(t => t !== b.dataset.time); render();
+  }));
+  el('btn-save-slots')?.addEventListener('click', async () => {
+    const date = el('new-slot-date').value;
+    if (!date) { st.error = 'Selecione uma data'; render(); return; }
+    try {
+      const rows = st.pendingTimes.map(t => ({ date, time: t }));
+      const { error } = await sb.from('time_slots').upsert(rows, { onConflict: 'date,time' });
+      if (error) throw new Error(error.message);
+      st.success = `${rows.length} horário(s) salvo(s) em ${fmtDate(date)}`;
+      st.pendingTimes = []; st.filterDate = date;
+      await loadSlots();
+    } catch(e) { st.error = e.message; render(); }
+  });
+  el('btn-filter')?.addEventListener('click', async () => { st.filterDate = el('filter-date').value; await loadSlots(); });
+  el('btn-clear')?.addEventListener('click',  async () => { st.filterDate = ''; await loadSlots(); });
+
+  document.querySelectorAll('[data-del-slot]').forEach(b => b.addEventListener('click', () => {
+    st.confirmDelete = { type:'slot', id:b.dataset.delSlot, label:b.dataset.lbl }; render();
+  }));
+
+  // Bookings
+  el('btn-refresh')?.addEventListener('click', loadBookings);
+  document.querySelectorAll('[data-del-booking]').forEach(b => b.addEventListener('click', () => {
+    st.confirmDelete = { type:'booking', id:b.dataset.delBooking, label:b.dataset.lbl }; render();
+  }));
+
+  // Codes
+  el('btn-new-code')?.addEventListener('click', () => { st.showCodeModal = true; st.newCode = {code:'',name:'',email:''}; render(); });
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
+    const active = b.dataset.active === 'true';
+    const { error } = await sb.from('access_codes').update({ active: !active }).eq('id', b.dataset.toggle);
+    if (error) { st.error = error.message; render(); } else await loadCodes();
+  }));
+  document.querySelectorAll('[data-del-code]').forEach(b => b.addEventListener('click', () => {
+    st.confirmDelete = { type:'code', id:b.dataset.delCode, label:b.dataset.lbl }; render();
+  }));
+
+  // Modal exclusão
+  el('del-cancel')?.addEventListener('click', () => { st.confirmDelete = null; render(); });
+  el('del-confirm')?.addEventListener('click', async () => {
+    const d = st.confirmDelete; st.confirmDelete = null;
+    try {
+      if (d.type === 'slot')    { const { error } = await sb.from('time_slots').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadSlots(); }
+      if (d.type === 'booking') { const { error } = await sb.from('bookings').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadBookings(); }
+      if (d.type === 'code')    { await sb.from('bookings').delete().eq('code_id', d.id); const { error } = await sb.from('access_codes').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadCodes(); }
+      st.success = 'Removido com sucesso.';
+      render();
+    } catch(e) { st.error = e.message; render(); }
+  });
+
+  // Modal novo código
+  el('code-cancel')?.addEventListener('click', () => { st.showCodeModal = false; render(); });
+  el('code-save')?.addEventListener('click', async () => {
+    const code = el('nc-code').value.trim().toUpperCase();
+    const name = el('nc-name').value.trim();
+    const email = el('nc-email').value.trim().toLowerCase();
+    const err = el('code-err');
+    if (!code||!name||!email) { err.style.display='block'; err.textContent='❌ Preencha todos os campos.'; return; }
+    const { error } = await sb.from('access_codes').insert({ code, name, email });
+    if (error) { err.style.display='block'; err.textContent='❌ '+(error.code==='23505'?'Código já existe.':error.message); return; }
+    st.showCodeModal = false; st.success = `Código criado para ${name}.`; await loadCodes();
+  });
+
+  // Modal alterar senha
+  el('pass-cancel')?.addEventListener('click', () => { st.showPassModal = false; render(); });
+  el('pass-save')?.addEventListener('click', async () => {
+    const newPass = el('new-pass').value;
+    const err = el('pass-err');
+    if (newPass.length < 6) { err.style.display='block'; err.textContent='❌ Mínimo 6 caracteres.'; return; }
+    const hash = await sha256(newPass);
+    const { error } = await sb.from('admin_config').update({ password_hash: hash }).eq('id', 1);
+    if (error) { err.style.display='block'; err.textContent='❌ '+error.message; return; }
+    st.showPassModal = false; st.success = 'Senha alterada!'; render();
+  });
+}
+
+// ─── Init ──────────────────────────────────────────────────────
+render();
+if (adminLoggedIn) loadTab('dashboard');
+</script>
+</body>
+</html>

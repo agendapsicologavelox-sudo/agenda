@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#5C6BC0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Agendamento — Psicóloga</title>
+
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #5C6BC0; --primary-dark: #3949AB; --primary-light: #E8EAF6;
+      --success: #43A047; --success-light: #E8F5E9;
+      --danger: #E53935; --danger-light: #FFEBEE;
+      --gray-light: #F5F5F5; --border: #E0E0E0;
+      --text: #212121; --text-secondary: #616161;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--gray-light); color: var(--text); min-height: 100vh; }
+
+    /* Header */
+    .header { background: var(--primary); color: white; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.2); position: sticky; top: 0; z-index: 100; }
+    .header-title { font-size: 18px; font-weight: 600; }
+    .header-sub { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+    .btn-logout { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 12px; border-radius: 20px; font-size: 13px; cursor: pointer; }
+
+    /* Container */
+    .container { max-width: 480px; margin: 0 auto; padding: 16px; }
+
+    /* Card */
+    .card { background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 16px; }
+    .card-header { background: var(--primary-light); padding: 14px 20px; font-weight: 600; font-size: 14px; color: var(--primary-dark); display: flex; align-items: center; gap: 8px; }
+    .card-body { padding: 20px; }
+
+    /* Login */
+    .login-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; background: linear-gradient(135deg, #5C6BC0 0%, #3949AB 100%); }
+    .login-logo { width: 80px; height: 80px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 36px; margin-bottom: 16px; }
+    .login-title { color: white; font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .login-subtitle { color: rgba(255,255,255,0.75); font-size: 14px; margin-bottom: 32px; text-align: center; }
+    .login-box { background: white; border-radius: 20px; padding: 28px 24px; width: 100%; max-width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .login-box h2 { font-size: 18px; color: var(--text); margin-bottom: 6px; }
+    .login-box p { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+
+    /* Form */
+    .form-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input { width: 100%; padding: 14px 16px; border: 2px solid var(--border); border-radius: 12px; font-size: 16px; transition: border-color 0.2s; outline: none; letter-spacing: 2px; text-transform: uppercase; }
+    .form-input:focus { border-color: var(--primary); }
+
+    /* Buttons */
+    .btn { display: block; width: 100%; padding: 15px; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; text-align: center; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:disabled { background: #B0B0B0; cursor: not-allowed; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text-secondary); }
+
+    /* Alert */
+    .alert { padding: 12px 16px; border-radius: 10px; font-size: 14px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 8px; }
+    .alert-error { background: var(--danger-light); color: var(--danger); }
+    .alert-success { background: var(--success-light); color: var(--success); }
+    .alert-info { background: var(--primary-light); color: var(--primary-dark); }
+
+    /* Booking banner */
+    .booking-banner { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+    .booking-banner-label { font-size: 12px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .booking-banner-date { font-size: 20px; font-weight: 700; margin: 6px 0 2px; }
+    .booking-banner-time { font-size: 16px; opacity: 0.9; }
+    .btn-cancel-booking { margin-top: 14px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; cursor: pointer; font-weight: 600; }
+
+    /* Calendar */
+    .calendar-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .calendar-nav-btn { background: none; border: none; font-size: 22px; cursor: pointer; padding: 6px 12px; color: var(--primary); border-radius: 8px; }
+    .calendar-nav-btn:disabled { opacity: 0.3; }
+    .calendar-month { font-weight: 700; font-size: 16px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .calendar-day-name { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary); padding: 4px 0; text-transform: uppercase; }
+    .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 14px; transition: all 0.15s; }
+    .calendar-day.past { color: #C0C0C0; }
+    .calendar-day.today { border: 2px solid var(--primary); color: var(--primary); font-weight: 700; }
+    .calendar-day.has-slots { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; cursor: pointer; }
+    .calendar-day.has-slots:hover { background: var(--primary); color: white; }
+    .calendar-day.selected { background: var(--primary) !important; color: white !important; font-weight: 700; }
+
+    /* Slots */
+    .slots-list { display: flex; flex-direction: column; gap: 10px; }
+    .slot-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 12px; border: 2px solid var(--border); }
+    .slot-item.available { border-color: var(--primary-light); background: white; }
+    .slot-item.booked { background: var(--gray-light); }
+    .slot-item.mine { border-color: var(--primary); background: var(--primary-light); }
+    .slot-time { font-size: 18px; font-weight: 700; }
+    .slot-status { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+    .slot-item.mine .slot-time { color: var(--primary-dark); }
+    .slot-item.mine .slot-status { color: var(--primary); font-weight: 600; }
+    .btn-book { background: var(--primary); color: white; border: none; padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-book:hover { background: var(--primary-dark); }
+    .slot-unavailable { font-size: 16px; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: flex-end; z-index: 1000; }
+    .modal { background: white; border-radius: 24px 24px 0 0; padding: 28px 24px 40px; width: 100%; max-width: 480px; margin: 0 auto; animation: slideUp 0.3s ease; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .modal-desc { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; }
+
+    /* Success */
+    .success-screen { text-align: center; padding: 32px 16px; }
+    .success-icon { width: 72px; height: 72px; background: var(--success-light); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 16px; }
+    .success-title { font-size: 22px; font-weight: 700; color: var(--success); margin-bottom: 8px; }
+    .success-sub { color: var(--text-secondary); font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
+    .success-details { background: var(--success-light); border-radius: 12px; padding: 16px; margin: 0 0 20px; text-align: left; }
+    .success-details-row { padding: 4px 0; font-size: 15px; }
+
+    /* Utils */
+    .empty-state { text-align: center; padding: 32px 16px; color: var(--text-secondary); }
+    .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+    .loading { display: flex; align-items: center; justify-content: center; padding: 32px; gap: 8px; color: var(--text-secondary); }
+    .spinner { width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Config warning */
+    .config-warning { background: #FFF3E0; border: 2px solid #FB8C00; border-radius: 16px; padding: 20px; margin: 24px auto; max-width: 480px; }
+    .config-warning h3 { color: #E65100; margin-bottom: 8px; }
+    .config-warning code { background: #FFE0B2; padding: 2px 6px; border-radius: 4px; font-size: 13px; display: block; margin: 4px 0; word-break: break-all; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     ⚙️  CONFIGURAÇÃO — Preencha com os dados do seu Supabase
+     ══════════════════════════════════════════════════════════ -->
+<script>
+  const SUPABASE_URL      = 'COLE_AQUI_SUA_SUPABASE_URL';
+  const SUPABASE_ANON_KEY = 'COLE_AQUI_SUA_SUPABASE_ANON_KEY';
+  const NOME_EMPRESA      = 'Minha Empresa';
+  const NOME_PSICOLOGA    = 'Psicóloga';
+</script>
+<!-- ══════════════════════════════════════════════════════════ -->
+
+<div id="app"></div>
+
+<script>
+// ─── Verificação de configuração ──────────────────────────────
+if (SUPABASE_URL === 'COLE_AQUI_SUA_SUPABASE_URL') {
+  document.getElementById('app').innerHTML = `
+    <div style="padding:24px">
+      <div class="config-warning">
+        <h3>⚙️ Configure o sistema</h3>
+        <p style="font-size:14px;margin-bottom:12px">Abra o arquivo <strong>index.html</strong> em um editor de texto e preencha as configurações do Supabase:</p>
+        <label style="font-size:12px;font-weight:600">SUPABASE_URL:</label>
+        <code>https://seuprojetoid.supabase.co</code>
+        <label style="font-size:12px;font-weight:600">SUPABASE_ANON_KEY:</label>
+        <code>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</code>
+        <p style="font-size:13px;margin-top:12px;color:#666">Encontre esses dados em: Supabase → Settings → API</p>
+      </div>
+    </div>
+  `;
+  throw new Error('Configure o Supabase primeiro');
+}
+
+// ─── Inicializar Supabase ──────────────────────────────────────
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ─── Estado ───────────────────────────────────────────────────
+let session  = JSON.parse(localStorage.getItem('ag_session') || 'null');
+let appState = {
+  view: 'calendar',
+  availableDates: [],
+  selectedDate: null,
+  slots: [],
+  myBooking: null,
+  loading: false,
+  slotsLoading: false,
+  error: null,
+  confirmModal: null,
+  cancelModal: false,
+  successData: null,
+  calendarMonth: null,
+};
+
+// ─── Helpers ──────────────────────────────────────────────────
+function logout() {
+  localStorage.removeItem('ag_session');
+  session = null;
+  appState = { ...appState, view: 'calendar', myBooking: null, availableDates: [], selectedDate: null, slots: [] };
+  render();
+}
+
+function fmtDate(d) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function el(id) { return document.getElementById(id); }
+
+// ─── Dados via Supabase ───────────────────────────────────────
+async function loadInitial() {
+  appState.loading = true; render();
+  try {
+    // Datas com slots disponíveis (não bloqueados)
+    const today = new Date().toISOString().split('T')[0];
+    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    const dateMap = {};
+    for (const s of (allSlots || [])) {
+      if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
+      dateMap[s.date].total++;
+      if (s.booked) dateMap[s.date].booked++;
+    }
+    appState.availableDates = Object.entries(dateMap)
+      .filter(([, v]) => v.booked < v.total)
+      .map(([d]) => d);
+
+    // Meu agendamento
+    const { data: myBook } = await sb.from('bookings')
+      .select('id, booked_at, time_slots(date, time)')
+      .eq('code_id', session.codeId)
+      .maybeSingle();
+    appState.myBooking = myBook ? { date: myBook.time_slots.date, time: myBook.time_slots.time, id: myBook.id } : null;
+
+    const now = new Date();
+    appState.calendarMonth = { year: now.getFullYear(), month: now.getMonth() };
+  } catch(e) {
+    appState.error = e.message;
+  }
+  appState.loading = false; render();
+}
+
+async function loadSlots(date) {
+  appState.slotsLoading = true; render();
+  try {
+    const { data } = await sb.from('slot_availability').select('id,time,booked,code_id').eq('date', date).order('time');
+    appState.slots = (data || []).map(s => ({
+      id: s.id,
+      time: s.time.slice(0, 5),
+      booked: s.booked,
+      mine: s.code_id === session.codeId,
+    }));
+  } catch(e) { appState.error = e.message; }
+  appState.slotsLoading = false; render();
+}
+
+async function bookSlot(slotId) {
+  try {
+    // Verifica se já tem agendamento
+    if (appState.myBooking) throw new Error('Você já possui um agendamento ativo.');
+    const { error } = await sb.from('bookings').insert({ slot_id: slotId, code_id: session.codeId });
+    if (error) throw new Error(error.code === '23505' ? 'Horário já foi ocupado agora mesmo. Escolha outro.' : error.message);
+
+    const slot = appState.slots.find(s => s.id === slotId);
+    appState.successData  = { date: appState.selectedDate, time: slot.time };
+    appState.myBooking    = { date: appState.selectedDate, time: slot.time };
+    appState.confirmModal = null;
+    appState.view = 'success';
+    // Recarrega datas disponíveis
+    const today = new Date().toISOString().split('T')[0];
+    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    const dateMap = {};
+    for (const s of (allSlots || [])) {
+      if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
+      dateMap[s.date].total++;
+      if (s.booked) dateMap[s.date].booked++;
+    }
+    appState.availableDates = Object.entries(dateMap).filter(([, v]) => v.booked < v.total).map(([d]) => d);
+  } catch(e) {
+    appState.error = e.message;
+    appState.confirmModal = null;
+  }
+  render();
+}
+
+async function cancelBooking() {
+  try {
+    const { error } = await sb.from('bookings').delete().eq('code_id', session.codeId);
+    if (error) throw new Error(error.message);
+    appState.myBooking    = null;
+    appState.cancelModal  = false;
+    appState.selectedDate = null;
+    appState.slots        = [];
+    const today = new Date().toISOString().split('T')[0];
+    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    const dateMap = {};
+    for (const s of (allSlots || [])) {
+      if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
+      dateMap[s.date].total++;
+      if (s.booked) dateMap[s.date].booked++;
+    }
+    appState.availableDates = Object.entries(dateMap).filter(([, v]) => v.booked < v.total).map(([d]) => d);
+  } catch(e) { appState.error = e.message; appState.cancelModal = false; }
+  render();
+}
+
+// ─── Render ───────────────────────────────────────────────────
+function render() {
+  const app = el('app');
+  if (!session) { app.innerHTML = renderLogin(); bindLogin(); return; }
+  app.innerHTML = renderApp();
+  bindApp();
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────
+function renderLogin() {
+  return `
+    <div class="login-screen">
+      <div class="login-logo">🧠</div>
+      <div class="login-title">${NOME_EMPRESA}</div>
+      <div class="login-subtitle">Agendamento com ${NOME_PSICOLOGA}</div>
+      <div class="login-box">
+        <h2>Bem-vindo</h2>
+        <p>Digite o código de acesso fornecido pela empresa</p>
+        <div id="login-error" class="alert alert-error" style="display:none"></div>
+        <div style="margin-bottom:16px">
+          <label class="form-label">Código de Acesso</label>
+          <input id="login-code" class="form-input" type="text" placeholder="Ex: ABC123" autocomplete="off" maxlength="20">
+        </div>
+        <button id="login-btn" class="btn btn-primary">Entrar</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindLogin() {
+  const btn = el('login-btn'), input = el('login-code'), errBox = el('login-error');
+  async function doLogin() {
+    const code = input.value.trim().toUpperCase();
+    if (!code) return;
+    btn.disabled = true; btn.textContent = 'Verificando...'; errBox.style.display = 'none';
+    try {
+      const { data, error } = await sb.from('access_codes')
+        .select('id,name,email').eq('code', code).eq('active', true).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error('Código inválido ou inativo. Verifique com o RH.');
+      session = { codeId: data.id, name: data.name, email: data.email };
+      localStorage.setItem('ag_session', JSON.stringify(session));
+      await loadInitial();
+    } catch(e) {
+      errBox.style.display = 'flex'; errBox.textContent = '❌ ' + e.message;
+      btn.disabled = false; btn.textContent = 'Entrar';
+    }
+  }
+  btn.addEventListener('click', doLogin);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  setTimeout(() => input.focus(), 100);
+}
+
+// ─── APP ──────────────────────────────────────────────────────
+function renderApp() {
+  if (appState.loading) return `
+    <div class="header"><div><div class="header-title">🧠 Agendamento</div></div></div>
+    <div class="loading"><div class="spinner"></div> Carregando...</div>
+  `;
+
+  let content = '';
+  if (appState.view === 'success') {
+    content = renderSuccess();
+  } else {
+    content = `<div class="container">
+      ${appState.myBooking ? renderMyBooking() : ''}
+      ${appState.error ? `<div class="alert alert-error">❌ ${appState.error}</div>` : ''}
+      ${!appState.myBooking ? renderCalendar() : ''}
+      ${appState.selectedDate && !appState.myBooking ? renderSlots() : ''}
+    </div>`;
+  }
+
+  return `
+    <div class="header">
+      <div><div class="header-title">🧠 ${NOME_PSICOLOGA}</div><div class="header-sub">${session?.name || ''}</div></div>
+      <button class="btn-logout" onclick="logout()">Sair</button>
+    </div>
+    ${content}
+    ${appState.confirmModal ? renderConfirmModal() : ''}
+    ${appState.cancelModal  ? renderCancelModal()  : ''}
+  `;
+}
+
+function renderMyBooking() {
+  const b = appState.myBooking;
+  return `
+    <div class="booking-banner">
+      <div class="booking-banner-label">✅ Seu Agendamento</div>
+      <div class="booking-banner-date">${fmtDate(b.date)}</div>
+      <div class="booking-banner-time">🕐 ${b.time}</div>
+      <button class="btn-cancel-booking" id="btn-cancel-my">Cancelar Agendamento</button>
+    </div>
+  `;
+}
+
+function renderCalendar() {
+  if (!appState.calendarMonth) return '';
+  const { year, month } = appState.calendarMonth;
+  const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const today  = new Date(); today.setHours(0,0,0,0);
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  let cells = DAYS.map(d => `<div class="calendar-day-name">${d}</div>`).join('');
+  for (let i = 0; i < firstDay; i++) cells += `<div class="calendar-day"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const date    = new Date(year, month, d);
+    const isPast  = date < today;
+    const isToday = date.getTime() === today.getTime();
+    const hasSlots   = appState.availableDates.includes(dateStr);
+    const isSelected = appState.selectedDate === dateStr;
+
+    let cls = 'calendar-day';
+    if (isPast) cls += ' past';
+    else if (isSelected) cls += ' selected';
+    else if (hasSlots) cls += ' has-slots';
+    else if (isToday) cls += ' today';
+
+    const click = !isPast && hasSlots ? `data-date="${dateStr}"` : '';
+    cells += `<div class="${cls}" ${click}>${d}</div>`;
+  }
+
+  const canPrev = new Date(year, month, 1) > new Date(today.getFullYear(), today.getMonth(), 1);
+  return `
+    <div class="card">
+      <div class="card-header">📅 Escolha uma Data</div>
+      <div class="card-body">
+        <div class="calendar-nav">
+          <button class="calendar-nav-btn" id="cal-prev" ${!canPrev ? 'disabled' : ''}>‹</button>
+          <span class="calendar-month">${MONTHS[month]} ${year}</span>
+          <button class="calendar-nav-btn" id="cal-next">›</button>
+        </div>
+        <div class="calendar-grid" id="cal-grid">${cells}</div>
+        ${appState.availableDates.length === 0 ? '<div style="text-align:center;padding:12px 0;font-size:13px;color:var(--text-secondary)">Nenhum horário disponível no momento.</div>' : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderSlots() {
+  if (appState.slotsLoading) return `<div class="loading"><div class="spinner"></div> Carregando horários...</div>`;
+  if (!appState.slots.length) return `
+    <div class="card"><div class="card-body">
+      <div class="empty-state"><div class="empty-state-icon">😕</div>Nenhum horário disponível para esta data.</div>
+    </div></div>
+  `;
+  const items = appState.slots.map(s => {
+    if (s.mine) return `<div class="slot-item mine"><div><div class="slot-time">${s.time}</div><div class="slot-status">⭐ Meu agendamento</div></div></div>`;
+    if (s.booked) return `<div class="slot-item booked"><div><div class="slot-time" style="color:var(--text-secondary)">${s.time}</div><div class="slot-status">Indisponível</div></div><span class="slot-unavailable">🔒</span></div>`;
+    return `<div class="slot-item available"><div><div class="slot-time">${s.time}</div><div class="slot-status">Disponível</div></div><button class="btn-book" data-slot-id="${s.id}" data-time="${s.time}">Agendar</button></div>`;
+  }).join('');
+  return `
+    <div class="card">
+      <div class="card-header">🕐 Horários — ${fmtDate(appState.selectedDate)}</div>
+      <div class="card-body"><div class="slots-list">${items}</div></div>
+    </div>
+  `;
+}
+
+function renderConfirmModal() {
+  const m = appState.confirmModal;
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">Confirmar Agendamento</div>
+    <div class="alert alert-info">📅 ${fmtDate(m.date)}<br>🕐 ${m.time}</div>
+    <p style="font-size:13px;color:var(--text-secondary)">Você receberá uma confirmação na tela. Para cancelar, acesse o sistema novamente.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="modal-back">Voltar</button>
+      <button class="btn btn-primary" id="modal-confirm">✅ Confirmar</button>
+    </div>
+  </div></div>`;
+}
+
+function renderCancelModal() {
+  const b = appState.myBooking;
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">Cancelar Agendamento</div>
+    <div class="alert alert-error">📅 ${fmtDate(b.date)}<br>🕐 ${b.time}</div>
+    <p style="font-size:13px;color:var(--text-secondary)">O horário será liberado para outros colaboradores.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="cancel-back">Voltar</button>
+      <button class="btn btn-danger" id="cancel-confirm">Cancelar agendamento</button>
+    </div>
+  </div></div>`;
+}
+
+function renderSuccess() {
+  const s = appState.successData;
+  return `<div class="container" style="margin-top:32px"><div class="card"><div class="card-body success-screen">
+    <div class="success-icon">✅</div>
+    <div class="success-title">Agendado com Sucesso!</div>
+    <div class="success-sub">Seu horário com ${NOME_PSICOLOGA} foi reservado.</div>
+    <div class="success-details">
+      <div class="success-details-row">📅 ${fmtDate(s.date)}</div>
+      <div class="success-details-row">🕐 ${s.time}</div>
+    </div>
+    <button class="btn btn-primary" id="btn-home">Voltar ao início</button>
+  </div></div></div>`;
+}
+
+// ─── Bind ──────────────────────────────────────────────────────
+function bindApp() {
+  el('btn-home')?.addEventListener('click', () => { appState.view = 'calendar'; appState.successData = null; render(); });
+  el('btn-cancel-my')?.addEventListener('click', () => { appState.cancelModal = true; render(); });
+  el('cancel-back')?.addEventListener('click',    () => { appState.cancelModal = false; render(); });
+  el('cancel-confirm')?.addEventListener('click', cancelBooking);
+  el('cal-prev')?.addEventListener('click', () => {
+    const { year, month } = appState.calendarMonth;
+    appState.calendarMonth = month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 };
+    render();
+  });
+  el('cal-next')?.addEventListener('click', () => {
+    const { year, month } = appState.calendarMonth;
+    appState.calendarMonth = month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 };
+    render();
+  });
+  el('cal-grid')?.addEventListener('click', async e => {
+    const day = e.target.closest('[data-date]');
+    if (!day) return;
+    appState.selectedDate = day.dataset.date;
+    appState.error = null;
+    render();
+    await loadSlots(day.dataset.date);
+  });
+  document.querySelector('.slots-list')?.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-book');
+    if (!btn) return;
+    appState.confirmModal = { slotId: parseInt(btn.dataset.slotId), date: appState.selectedDate, time: btn.dataset.time };
+    appState.error = null; render();
+  });
+  el('modal-back')?.addEventListener('click',    () => { appState.confirmModal = null; render(); });
+  el('modal-confirm')?.addEventListener('click', () => bookSlot(appState.confirmModal.slotId));
+}
+
+// ─── Init ──────────────────────────────────────────────────────
+render();
+if (session) loadInitial();
+</script>
+</body>
+</html>
