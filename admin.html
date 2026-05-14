@@ -134,7 +134,7 @@
 <div id="app"></div>
 
 <script>
-if (false) /* já configurado */ {
+if (SUPABASE_URL === 'COLE_AQUI_SUA_SUPABASE_URL') {
   document.getElementById('app').innerHTML = `
     <div style="padding:24px">
       <div class="config-warning">
@@ -164,13 +164,15 @@ let adminLoggedIn = sessionStorage.getItem('ag_admin') === '1';
 let st = {
   tab: 'dashboard',
   stats: null,
-  slots: [], bookings: [], codes: [],
+  slots: [], bookings: [], codes: [], psychologists: [],
   loading: false, error: null, success: null,
-  filterDate: '',
+  filterDate: '', filterPsychId: '',
+  slotsPsychId: '',
   pendingTimes: [],
   confirmDelete: null,
   showCodeModal: false, newCode: { code:'', name:'', email:'' },
   showPassModal: false,
+  showMedicaModal: false, newMedica: { name:'', specialty:'Psicóloga' },
 };
 
 function logout() { sessionStorage.removeItem('ag_admin'); adminLoggedIn = false; render(); }
@@ -192,10 +194,16 @@ async function loadStats() {
   st.stats = { slots: slots||0, booked: booked||0, codes: codes||0, todaySlots: todaySlots||0, todayBooked: todayBookings?.length||0 };
 }
 
+async function loadPsychologists() {
+  const { data } = await sb.from('psychologists').select('id,name,specialty,active').order('name');
+  st.psychologists = data || [];
+}
+
 async function loadSlots() {
   st.loading = true; render();
-  let q = sb.from('time_slots').select('id,date,time,bookings(id,code_id,access_codes(name,email),booked_at)').order('date').order('time');
-  if (st.filterDate) q = q.eq('date', st.filterDate);
+  let q = sb.from('time_slots').select('id,date,time,psychologist_id,psychologists(name),bookings(id,code_id,access_codes(name,email),booked_at)').order('date').order('time');
+  if (st.filterDate)   q = q.eq('date', st.filterDate);
+  if (st.filterPsychId) q = q.eq('psychologist_id', st.filterPsychId);
   const { data, error } = await q;
   if (error) st.error = error.message;
   else st.slots = (data || []).map(s => ({ ...s, booking: s.bookings?.[0] || null }));
@@ -205,7 +213,7 @@ async function loadSlots() {
 async function loadBookings() {
   st.loading = true; render();
   const { data, error } = await sb.from('bookings')
-    .select('id,booked_at,access_codes(name,email),time_slots(date,time)')
+    .select('id,booked_at,access_codes(name,email),time_slots(date,time,psychologists(name))')
     .order('time_slots(date)').order('time_slots(time)');
   if (error) st.error = error.message;
   else st.bookings = data || [];
@@ -225,9 +233,10 @@ async function loadCodes() {
 async function loadTab(tab) {
   st.tab = tab; st.error = null; st.success = null;
   if (tab === 'dashboard') await loadStats();
-  if (tab === 'slots')     await loadSlots();
+  if (tab === 'slots')     { await loadPsychologists(); await loadSlots(); }
   if (tab === 'bookings')  await loadBookings();
   if (tab === 'codes')     await loadCodes();
+  if (tab === 'medicas')   await loadPsychologists();
   render();
 }
 
@@ -286,14 +295,16 @@ function bindLogin() {
 function renderLayout() {
   const tabs = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    { id: 'slots',     icon: '📅', label: 'Horários'  },
+    { id: 'medicas',   icon: '👩‍⚕️', label: 'Médicas'    },
+    { id: 'slots',     icon: '📅', label: 'Horários'   },
     { id: 'bookings',  icon: '📋', label: 'Agendamentos' },
-    { id: 'codes',     icon: '🔑', label: 'Códigos' },
+    { id: 'codes',     icon: '🔑', label: 'Códigos'    },
   ];
   const nav = tabs.map(t => `<div class="nav-item ${st.tab===t.id?'active':''}" data-tab="${t.id}"><span class="nav-icon">${t.icon}</span>${t.label}</div>`).join('');
 
   let main = '';
   if (st.tab==='dashboard') main = renderDashboard();
+  if (st.tab==='medicas')   main = renderMedicasTab();
   if (st.tab==='slots')     main = renderSlotsTab();
   if (st.tab==='bookings')  main = renderBookingsTab();
   if (st.tab==='codes')     main = renderCodesTab();
@@ -314,9 +325,10 @@ function renderLayout() {
         ${main}
       </div>
     </div>
-    ${st.confirmDelete ? renderDeleteModal() : ''}
-    ${st.showCodeModal  ? renderCodeModal()  : ''}
-    ${st.showPassModal  ? renderPassModal()  : ''}
+    ${st.confirmDelete    ? renderDeleteModal()  : ''}
+    ${st.showCodeModal    ? renderCodeModal()    : ''}
+    ${st.showPassModal    ? renderPassModal()    : ''}
+    ${st.showMedicaModal  ? renderMedicaModal()  : ''}
   `;
 }
 
@@ -340,10 +352,38 @@ function renderDashboard() {
   `;
 }
 
+// ── Médicas ──
+function renderMedicasTab() {
+  if (st.loading) return `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
+  const rows = st.psychologists.map(p => `<tr>
+    <td><strong>${p.name}</strong></td>
+    <td>${p.specialty}</td>
+    <td>${p.active ? '<span class="badge badge-green">Ativa</span>' : '<span class="badge badge-red">Inativa</span>'}</td>
+    <td><div style="display:flex;gap:6px">
+      <button class="btn btn-outline btn-sm" data-toggle-psych="${p.id}" data-active="${p.active}">${p.active ? '⏸ Desativar' : '▶ Ativar'}</button>
+    </div></td>
+  </tr>`).join('');
+
+  return `
+    <h2 style="margin-bottom:20px">👩‍⚕️ Médicas / Psicólogas</h2>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Total: ${st.psychologists.length} cadastrada(s)</span>
+        <button class="btn btn-primary" id="btn-new-medica">+ Nova Médica</button>
+      </div>
+      ${st.psychologists.length === 0
+        ? '<div class="empty-state"><div class="empty-state-icon">👩‍⚕️</div><div>Nenhuma médica cadastrada.</div></div>'
+        : `<div class="table-wrap"><table><thead><tr><th>Nome</th><th>Especialidade</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+    </div>
+  `;
+}
+
 // ── Horários ──
 function renderSlotsTab() {
   const today = new Date().toISOString().split('T')[0];
   const times = Array.from({length:19},(_,i)=>{ const h=Math.floor(i/2)+8,m=i%2===0?'00':'30'; return `${String(h).padStart(2,'0')}:${m}`; });
+  const psychOptions = st.psychologists.filter(p=>p.active).map(p=>`<option value="${p.id}" ${st.slotsPsychId==p.id?'selected':''}>${p.name}</option>`).join('');
+  const psychFilter  = st.psychologists.map(p=>`<option value="${p.id}" ${st.filterPsychId==p.id?'selected':''}>${p.name}</option>`).join('');
   const byDate = {};
   for (const s of st.slots) { if (!byDate[s.date]) byDate[s.date]=[]; byDate[s.date].push(s); }
 
@@ -356,6 +396,7 @@ function renderSlotsTab() {
     : Object.entries(byDate).sort().map(([date,list]) => {
         const rows = list.map(s => `<tr>
           <td><strong>${s.time?.slice(0,5)}</strong></td>
+          <td><span class="badge badge-blue">${s.psychologists?.name||'—'}</span></td>
           <td>${s.booking ? '<span class="badge badge-green">Agendado</span>' : '<span class="badge badge-gray">Disponível</span>'}</td>
           <td>${s.booking?.access_codes?.name || '—'}</td>
           <td>${s.booking?.booked_at ? fmtDT(s.booking.booked_at) : '—'}</td>
@@ -364,7 +405,7 @@ function renderSlotsTab() {
         return `<div class="card">
           <div class="card-header"><span class="card-title">📅 ${fmtDate(date)}</span><span class="badge badge-blue">${list.length} horário(s)</span></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Horário</th><th>Status</th><th>Colaborador</th><th>Agendado em</th><th>Ação</th></tr></thead>
+            <thead><tr><th>Horário</th><th>Psicóloga</th><th>Status</th><th>Colaborador</th><th>Agendado em</th><th>Ação</th></tr></thead>
             <tbody>${rows}</tbody>
           </table></div>
         </div>`;
@@ -376,6 +417,7 @@ function renderSlotsTab() {
       <div class="card-header"><span class="card-title">➕ Adicionar Horários</span></div>
       <div class="card-body">
         <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group"><label class="form-label">Psicóloga</label><select id="new-slot-psych" class="form-input"><option value="">— Selecione —</option>${psychOptions}</select></div>
           <div class="form-group"><label class="form-label">Data</label><input type="date" id="new-slot-date" class="form-input" min="${today}" value="${st.filterDate||today}"></div>
           <div class="form-group"><label class="form-label">Horário</label><select id="new-slot-time" class="form-input">${times.map(t=>`<option>${t}</option>`).join('')}</select></div>
           <button class="btn btn-outline" id="btn-add-time">+ Adicionar</button>
@@ -384,12 +426,13 @@ function renderSlotsTab() {
       </div>
     </div>
     <div class="card">
-      <div class="card-header"><span class="card-title">🔍 Filtrar por Data</span></div>
+      <div class="card-header"><span class="card-title">🔍 Filtrar</span></div>
       <div class="card-body">
         <div class="form-row">
+          <div class="form-group"><label class="form-label">Psicóloga</label><select id="filter-psych" class="form-input"><option value="">Todas</option>${psychFilter}</select></div>
           <div class="form-group"><label class="form-label">Data</label><input type="date" id="filter-date" class="form-input" value="${st.filterDate}"></div>
           <button class="btn btn-primary" id="btn-filter">Filtrar</button>
-          ${st.filterDate ? '<button class="btn btn-outline" id="btn-clear">Limpar</button>' : ''}
+          ${st.filterDate||st.filterPsychId ? '<button class="btn btn-outline" id="btn-clear">Limpar</button>' : ''}
         </div>
       </div>
     </div>
@@ -403,6 +446,7 @@ function renderBookingsTab() {
   const rows = st.bookings.map(b => `<tr>
     <td><strong>${b.access_codes?.name||'—'}</strong></td>
     <td>${b.access_codes?.email||'—'}</td>
+    <td><span class="badge badge-blue">${b.time_slots?.psychologists?.name||'—'}</span></td>
     <td>${fmtDate(b.time_slots?.date)}</td>
     <td><strong>${b.time_slots?.time?.slice(0,5)||'—'}</strong></td>
     <td>${fmtDT(b.booked_at)}</td>
@@ -418,7 +462,7 @@ function renderBookingsTab() {
       </div>
       ${st.bookings.length===0
         ? '<div class="empty-state"><div class="empty-state-icon">📋</div><div>Nenhum agendamento ainda.</div></div>'
-        : `<div class="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Data</th><th>Horário</th><th>Agendado em</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+        : `<div class="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Psicóloga</th><th>Data</th><th>Horário</th><th>Agendado em</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table></div>`}
     </div>
   `;
 }
@@ -506,6 +550,26 @@ function renderPassModal() {
   </div></div>`;
 }
 
+function renderMedicaModal() {
+  const m = st.newMedica;
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">➕ Nova Médica</div>
+    <div id="medica-err" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Nome</label>
+      <input id="nm-name" class="form-input" style="width:100%" type="text" placeholder="Nome completo" value="${m.name}">
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Especialidade</label>
+      <input id="nm-specialty" class="form-input" style="width:100%" type="text" value="${m.specialty}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="medica-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="medica-save">✅ Cadastrar</button>
+    </div>
+  </div></div>`;
+}
+
 // ─── Bind ──────────────────────────────────────────────────────
 function bindLayout() {
   document.querySelectorAll('[data-tab]').forEach(e => e.addEventListener('click', () => loadTab(e.dataset.tab)));
@@ -519,20 +583,27 @@ function bindLayout() {
   document.querySelectorAll('.chip-rm').forEach(b => b.addEventListener('click', () => {
     st.pendingTimes = st.pendingTimes.filter(t => t !== b.dataset.time); render();
   }));
+  el('new-slot-psych')?.addEventListener('change', () => { st.slotsPsychId = el('new-slot-psych').value; });
   el('btn-save-slots')?.addEventListener('click', async () => {
     const date = el('new-slot-date').value;
+    const psychId = el('new-slot-psych')?.value;
     if (!date) { st.error = 'Selecione uma data'; render(); return; }
+    if (!psychId) { st.error = 'Selecione uma psicóloga'; render(); return; }
     try {
-      const rows = st.pendingTimes.map(t => ({ date, time: t }));
-      const { error } = await sb.from('time_slots').upsert(rows, { onConflict: 'date,time' });
+      const rows = st.pendingTimes.map(t => ({ date, time: t, psychologist_id: parseInt(psychId) }));
+      const { error } = await sb.from('time_slots').upsert(rows, { onConflict: 'date,time,psychologist_id' });
       if (error) throw new Error(error.message);
       st.success = `${rows.length} horário(s) salvo(s) em ${fmtDate(date)}`;
       st.pendingTimes = []; st.filterDate = date;
       await loadSlots();
     } catch(e) { st.error = e.message; render(); }
   });
-  el('btn-filter')?.addEventListener('click', async () => { st.filterDate = el('filter-date').value; await loadSlots(); });
-  el('btn-clear')?.addEventListener('click',  async () => { st.filterDate = ''; await loadSlots(); });
+  el('btn-filter')?.addEventListener('click', async () => {
+    st.filterDate = el('filter-date').value;
+    st.filterPsychId = el('filter-psych')?.value || '';
+    await loadSlots();
+  });
+  el('btn-clear')?.addEventListener('click', async () => { st.filterDate = ''; st.filterPsychId = ''; await loadSlots(); });
 
   document.querySelectorAll('[data-del-slot]').forEach(b => b.addEventListener('click', () => {
     st.confirmDelete = { type:'slot', id:b.dataset.delSlot, label:b.dataset.lbl }; render();
@@ -591,6 +662,28 @@ function bindLayout() {
     const { error } = await sb.from('admin_config').update({ password_hash: hash }).eq('id', 1);
     if (error) { err.style.display='block'; err.textContent='❌ '+error.message; return; }
     st.showPassModal = false; st.success = 'Senha alterada!'; render();
+  });
+
+  // Médicas
+  el('btn-new-medica')?.addEventListener('click', () => { st.showMedicaModal = true; st.newMedica = { name:'', specialty:'Psicóloga' }; render(); });
+  document.querySelectorAll('[data-toggle-psych]').forEach(b => b.addEventListener('click', async () => {
+    const active = b.dataset.active === 'true';
+    const { error } = await sb.from('psychologists').update({ active: !active }).eq('id', b.dataset.togglePsych);
+    if (error) { st.error = error.message; render(); } else await loadPsychologists().then(render);
+  }));
+
+  // Modal nova médica
+  el('medica-cancel')?.addEventListener('click', () => { st.showMedicaModal = false; render(); });
+  el('medica-save')?.addEventListener('click', async () => {
+    const name = el('nm-name').value.trim();
+    const specialty = el('nm-specialty').value.trim();
+    const err = el('medica-err');
+    if (!name) { err.style.display='block'; err.textContent='❌ Informe o nome.'; return; }
+    const { error } = await sb.from('psychologists').insert({ name, specialty });
+    if (error) { err.style.display='block'; err.textContent='❌ '+error.message; return; }
+    st.showMedicaModal = false; st.success = `${name} cadastrada!`;
+    await loadPsychologists();
+    render();
   });
 }
 
