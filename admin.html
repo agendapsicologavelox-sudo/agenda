@@ -172,7 +172,7 @@ let st = {
   confirmDelete: null,
   showCodeModal: false, newCode: { code:'', name:'', email:'' },
   showPassModal: false,
-  showMedicaModal: false, newMedica: { name:'', specialty:'Psicóloga' },
+  showMedicaModal: false, newMedica: { id: null, name:'', specialty:'Psicóloga' },
 };
 
 function logout() { sessionStorage.removeItem('ag_admin'); adminLoggedIn = false; render(); }
@@ -361,6 +361,8 @@ function renderMedicasTab() {
     <td>${p.active ? '<span class="badge badge-green">Ativa</span>' : '<span class="badge badge-red">Inativa</span>'}</td>
     <td><div style="display:flex;gap:6px">
       <button class="btn btn-outline btn-sm" data-toggle-psych="${p.id}" data-active="${p.active}">${p.active ? '⏸ Desativar' : '▶ Ativar'}</button>
+      <button class="btn btn-outline btn-sm" data-edit-psych="${p.id}" data-name="${p.name}" data-specialty="${p.specialty}">✏️ Editar</button>
+      <button class="btn btn-danger btn-sm" data-del-psych="${p.id}" data-lbl="${p.name}">🗑️</button>
     </div></td>
   </tr>`).join('');
 
@@ -552,8 +554,9 @@ function renderPassModal() {
 
 function renderMedicaModal() {
   const m = st.newMedica;
+  const isEdit = !!m.id;
   return `<div class="modal-overlay"><div class="modal">
-    <div class="modal-title">➕ Nova Médica</div>
+    <div class="modal-title">${isEdit ? '✏️ Editar Médica' : '➕ Nova Médica'}</div>
     <div id="medica-err" class="alert alert-error" style="display:none"></div>
     <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">Nome</label>
@@ -565,7 +568,7 @@ function renderMedicaModal() {
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" id="medica-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="medica-save">✅ Cadastrar</button>
+      <button class="btn btn-primary" id="medica-save">${isEdit ? '💾 Salvar' : '✅ Cadastrar'}</button>
     </div>
   </div></div>`;
 }
@@ -634,6 +637,7 @@ function bindLayout() {
       if (d.type === 'slot')    { const { error } = await sb.from('time_slots').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadSlots(); }
       if (d.type === 'booking') { const { error } = await sb.from('bookings').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadBookings(); }
       if (d.type === 'code')    { await sb.from('bookings').delete().eq('code_id', d.id); const { error } = await sb.from('access_codes').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadCodes(); }
+      if (d.type === 'psych')   { const { error } = await sb.from('psychologists').delete().eq('id', d.id); if (error) throw new Error(error.message); await loadPsychologists(); }
       st.success = 'Removido com sucesso.';
       render();
     } catch(e) { st.error = e.message; render(); }
@@ -665,23 +669,39 @@ function bindLayout() {
   });
 
   // Médicas
-  el('btn-new-medica')?.addEventListener('click', () => { st.showMedicaModal = true; st.newMedica = { name:'', specialty:'Psicóloga' }; render(); });
+  el('btn-new-medica')?.addEventListener('click', () => { st.showMedicaModal = true; st.newMedica = { id: null, name:'', specialty:'Psicóloga' }; render(); });
   document.querySelectorAll('[data-toggle-psych]').forEach(b => b.addEventListener('click', async () => {
     const active = b.dataset.active === 'true';
     const { error } = await sb.from('psychologists').update({ active: !active }).eq('id', b.dataset.togglePsych);
-    if (error) { st.error = error.message; render(); } else await loadPsychologists().then(render);
+    if (error) { st.error = error.message; render(); } else { await loadPsychologists(); render(); }
+  }));
+  document.querySelectorAll('[data-edit-psych]').forEach(b => b.addEventListener('click', () => {
+    st.showMedicaModal = true;
+    st.newMedica = { id: parseInt(b.dataset.editPsych), name: b.dataset.name, specialty: b.dataset.specialty };
+    render();
+  }));
+  document.querySelectorAll('[data-del-psych]').forEach(b => b.addEventListener('click', () => {
+    st.confirmDelete = { type: 'psych', id: b.dataset.delPsych, label: b.dataset.lbl }; render();
   }));
 
-  // Modal nova médica
+  // Modal médica (cadastro e edição)
   el('medica-cancel')?.addEventListener('click', () => { st.showMedicaModal = false; render(); });
   el('medica-save')?.addEventListener('click', async () => {
     const name = el('nm-name').value.trim();
     const specialty = el('nm-specialty').value.trim();
     const err = el('medica-err');
     if (!name) { err.style.display='block'; err.textContent='❌ Informe o nome.'; return; }
-    const { error } = await sb.from('psychologists').insert({ name, specialty });
-    if (error) { err.style.display='block'; err.textContent='❌ '+error.message; return; }
-    st.showMedicaModal = false; st.success = `${name} cadastrada!`;
+    let dbError;
+    if (st.newMedica.id) {
+      const { error } = await sb.from('psychologists').update({ name, specialty }).eq('id', st.newMedica.id);
+      dbError = error;
+    } else {
+      const { error } = await sb.from('psychologists').insert({ name, specialty });
+      dbError = error;
+    }
+    if (dbError) { err.style.display='block'; err.textContent='❌ '+dbError.message; return; }
+    st.showMedicaModal = false;
+    st.success = st.newMedica.id ? `${name} atualizada!` : `${name} cadastrada!`;
     await loadPsychologists();
     render();
   });
