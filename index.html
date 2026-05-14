@@ -202,7 +202,7 @@ function el(id) { return document.getElementById(id); }
 
 // ─── Dados via Supabase ───────────────────────────────────────
 async function loadPsychologists() {
-  const { data } = await sb.from('psychologists').select('id,name').eq('active', true).order('name');
+  const { data } = await sb.from('psychologist_monthly_stats').select('id,name,active,monthly_limit,bookings_this_month,limit_reached').eq('active', true).order('name');
   appState.psychologists = data || [];
 }
 
@@ -406,13 +406,18 @@ function renderApp() {
 
 // ── Seleção de Psicóloga ──
 function renderPsychSelect() {
-  const psychCards = appState.psychologists.map(p => `
-    <div style="background:white;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:24px;display:flex;flex-direction:column;align-items:center;gap:12px;cursor:pointer;border:2px solid transparent;transition:all 0.2s" class="psych-card" data-psych-id="${p.id}" data-psych-name="${p.name}">
-      <div style="width:72px;height:72px;background:var(--primary-light);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px">👩‍⚕️</div>
+  const psychCards = appState.psychologists.map(p => {
+    const blocked = p.limit_reached;
+    return `
+    <div style="background:white;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:24px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:${blocked?'not-allowed':'pointer'};border:2px solid ${blocked?'#FFCDD2':'transparent'};transition:all 0.2s;opacity:${blocked?'0.75':'1'}" class="psych-card" data-psych-id="${p.id}" data-psych-name="${p.name}" data-blocked="${blocked}">
+      <div style="width:72px;height:72px;background:${blocked?'#FFEBEE':'var(--primary-light)'};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px">${blocked?'🔒':'👩‍⚕️'}</div>
       <div style="font-size:16px;font-weight:700;color:var(--text)">${p.name}</div>
-      <div style="font-size:13px;color:var(--text-secondary)">Psicóloga</div>
-    </div>
-  `).join('');
+      ${blocked
+        ? `<div style="font-size:12px;color:#E53935;font-weight:600;text-align:center">Limite atingido<br>Aguardando liberação</div>`
+        : `<div style="font-size:12px;color:var(--text-secondary)">${p.bookings_this_month||0}/${p.monthly_limit||25} este mês</div>`
+      }
+    </div>`;
+  }).join('');
 
   const emptyMsg = appState.psychologists.length === 0
     ? `<div class="empty-state"><div class="empty-state-icon">👩‍⚕️</div><div>Nenhuma psicóloga disponível.</div></div>`
@@ -427,7 +432,7 @@ function renderPsychSelect() {
       </div>
       ${appState.error ? `<div class="alert alert-error">❌ ${appState.error}</div>` : ''}
       ${emptyMsg}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">${psychCards}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px">${psychCards}</div>
     </div>
   `;
 }
@@ -559,6 +564,11 @@ function bindApp() {
     card.addEventListener('mouseenter', () => { card.style.borderColor = 'var(--primary)'; card.style.boxShadow = '0 4px 20px rgba(92,107,192,0.25)'; });
     card.addEventListener('mouseleave', () => { card.style.borderColor = 'transparent'; card.style.boxShadow = '0 2px 12px rgba(0,0,0,0.08)'; });
     card.addEventListener('click', async () => {
+      if (card.dataset.blocked === 'true') {
+        appState.error = `${card.dataset.psychName} atingiu o limite de atendimentos deste mês. Aguarde a liberação pelo RH.`;
+        render(); return;
+      }
+      appState.error = null;
       appState.selectedPsych = { id: parseInt(card.dataset.psychId), name: card.dataset.psychName };
       appState.view = 'calendar';
       appState.selectedDate = null;
