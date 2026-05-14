@@ -146,7 +146,7 @@
 
 <script>
 // ─── Verificação de configuração ──────────────────────────────
-if (false) /* já configurado */ {
+if (SUPABASE_URL === 'COLE_AQUI_SUA_SUPABASE_URL') {
   document.getElementById('app').innerHTML = `
     <div style="padding:24px">
       <div class="config-warning">
@@ -170,7 +170,9 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ─── Estado ───────────────────────────────────────────────────
 let session  = JSON.parse(localStorage.getItem('ag_session') || 'null');
 let appState = {
-  view: 'calendar',
+  view: 'choose_psych',
+  psychologists: [],
+  selectedPsych: null,
   availableDates: [],
   selectedDate: null,
   slots: [],
@@ -188,7 +190,7 @@ let appState = {
 function logout() {
   localStorage.removeItem('ag_session');
   session = null;
-  appState = { ...appState, view: 'calendar', myBooking: null, availableDates: [], selectedDate: null, slots: [] };
+  appState = { ...appState, view: 'choose_psych', selectedPsych: null, psychologists: [], myBooking: null, availableDates: [], selectedDate: null, slots: [] };
   render();
 }
 
@@ -199,12 +201,19 @@ function fmtDate(d) {
 function el(id) { return document.getElementById(id); }
 
 // ─── Dados via Supabase ───────────────────────────────────────
+async function loadPsychologists() {
+  const { data } = await sb.from('psychologists').select('id,name').eq('active', true).order('name');
+  appState.psychologists = data || [];
+}
+
 async function loadInitial() {
   appState.loading = true; render();
   try {
-    // Datas com slots disponíveis (não bloqueados)
+    // Datas com slots disponíveis filtradas pela psicóloga selecionada
     const today = new Date().toISOString().split('T')[0];
-    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    let q = sb.from('slot_availability').select('date,booked,psychologist_id').gte('date', today);
+    if (appState.selectedPsych) q = q.eq('psychologist_id', appState.selectedPsych.id);
+    const { data: allSlots } = await q;
     const dateMap = {};
     for (const s of (allSlots || [])) {
       if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
@@ -217,10 +226,15 @@ async function loadInitial() {
 
     // Meu agendamento
     const { data: myBook } = await sb.from('bookings')
-      .select('id, booked_at, time_slots(date, time)')
+      .select('id, booked_at, time_slots(date, time, psychologist_id, psychologists(name))')
       .eq('code_id', session.codeId)
       .maybeSingle();
-    appState.myBooking = myBook ? { date: myBook.time_slots.date, time: myBook.time_slots.time, id: myBook.id } : null;
+    appState.myBooking = myBook ? {
+      date: myBook.time_slots.date,
+      time: myBook.time_slots.time,
+      id: myBook.id,
+      psychName: myBook.time_slots.psychologists?.name || ''
+    } : null;
 
     const now = new Date();
     appState.calendarMonth = { year: now.getFullYear(), month: now.getMonth() };
@@ -233,7 +247,9 @@ async function loadInitial() {
 async function loadSlots(date) {
   appState.slotsLoading = true; render();
   try {
-    const { data } = await sb.from('slot_availability').select('id,time,booked,code_id').eq('date', date).order('time');
+    let q = sb.from('slot_availability').select('id,time,booked,code_id,psychologist_id').eq('date', date).order('time');
+    if (appState.selectedPsych) q = q.eq('psychologist_id', appState.selectedPsych.id);
+    const { data } = await q;
     appState.slots = (data || []).map(s => ({
       id: s.id,
       time: s.time.slice(0, 5),
@@ -252,13 +268,15 @@ async function bookSlot(slotId) {
     if (error) throw new Error(error.code === '23505' ? 'Horário já foi ocupado agora mesmo. Escolha outro.' : error.message);
 
     const slot = appState.slots.find(s => s.id === slotId);
-    appState.successData  = { date: appState.selectedDate, time: slot.time };
-    appState.myBooking    = { date: appState.selectedDate, time: slot.time };
+    appState.successData  = { date: appState.selectedDate, time: slot.time, psychName: appState.selectedPsych?.name };
+    appState.myBooking    = { date: appState.selectedDate, time: slot.time, psychName: appState.selectedPsych?.name };
     appState.confirmModal = null;
     appState.view = 'success';
     // Recarrega datas disponíveis
     const today = new Date().toISOString().split('T')[0];
-    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    let qRefresh = sb.from('slot_availability').select('date,booked,psychologist_id').gte('date', today);
+    if (appState.selectedPsych) qRefresh = qRefresh.eq('psychologist_id', appState.selectedPsych.id);
+    const { data: allSlots } = await qRefresh;
     const dateMap = {};
     for (const s of (allSlots || [])) {
       if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
@@ -282,7 +300,9 @@ async function cancelBooking() {
     appState.selectedDate = null;
     appState.slots        = [];
     const today = new Date().toISOString().split('T')[0];
-    const { data: allSlots } = await sb.from('slot_availability').select('date,booked').gte('date', today);
+    let qCancel = sb.from('slot_availability').select('date,booked,psychologist_id').gte('date', today);
+    if (appState.selectedPsych) qCancel = qCancel.eq('psychologist_id', appState.selectedPsych.id);
+    const { data: allSlots } = await qCancel;
     const dateMap = {};
     for (const s of (allSlots || [])) {
       if (!dateMap[s.date]) dateMap[s.date] = { total: 0, booked: 0 };
@@ -336,7 +356,11 @@ function bindLogin() {
       if (!data) throw new Error('Código inválido ou inativo. Verifique com o RH.');
       session = { codeId: data.id, name: data.name, email: data.email };
       localStorage.setItem('ag_session', JSON.stringify(session));
-      await loadInitial();
+      appState.loading = true; render();
+      await loadPsychologists();
+      appState.loading = false;
+      appState.view = 'choose_psych';
+      render();
     } catch(e) {
       errBox.style.display = 'flex'; errBox.textContent = '❌ ' + e.message;
       btn.disabled = false; btn.textContent = 'Entrar';
@@ -355,7 +379,9 @@ function renderApp() {
   `;
 
   let content = '';
-  if (appState.view === 'success') {
+  if (appState.view === 'choose_psych') {
+    content = renderPsychSelect();
+  } else if (appState.view === 'success') {
     content = renderSuccess();
   } else {
     content = `<div class="container">
@@ -366,9 +392,10 @@ function renderApp() {
     </div>`;
   }
 
+  const psychLabel = appState.selectedPsych ? appState.selectedPsych.name : NOME_PSICOLOGA;
   return `
     <div class="header">
-      <div><div class="header-title">🧠 ${NOME_PSICOLOGA}</div><div class="header-sub">${session?.name || ''}</div></div>
+      <div><div class="header-title">🧠 ${psychLabel}</div><div class="header-sub">${session?.name || ''}</div></div>
       <button class="btn-logout" onclick="logout()">Sair</button>
     </div>
     ${content}
@@ -377,11 +404,40 @@ function renderApp() {
   `;
 }
 
+// ── Seleção de Psicóloga ──
+function renderPsychSelect() {
+  const psychCards = appState.psychologists.map(p => `
+    <div style="background:white;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:24px;display:flex;flex-direction:column;align-items:center;gap:12px;cursor:pointer;border:2px solid transparent;transition:all 0.2s" class="psych-card" data-psych-id="${p.id}" data-psych-name="${p.name}">
+      <div style="width:72px;height:72px;background:var(--primary-light);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px">👩‍⚕️</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text)">${p.name}</div>
+      <div style="font-size:13px;color:var(--text-secondary)">Psicóloga</div>
+    </div>
+  `).join('');
+
+  const emptyMsg = appState.psychologists.length === 0
+    ? `<div class="empty-state"><div class="empty-state-icon">👩‍⚕️</div><div>Nenhuma psicóloga disponível.</div></div>`
+    : '';
+
+  return `
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="font-size:40px;margin-bottom:10px">🧠</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:6px">Olá, ${session?.name?.split(' ')[0]}!</div>
+        <div style="font-size:14px;color:var(--text-secondary)">Com qual psicóloga você deseja agendar?</div>
+      </div>
+      ${appState.error ? `<div class="alert alert-error">❌ ${appState.error}</div>` : ''}
+      ${emptyMsg}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">${psychCards}</div>
+    </div>
+  `;
+}
+
 function renderMyBooking() {
   const b = appState.myBooking;
   return `
     <div class="booking-banner">
       <div class="booking-banner-label">✅ Seu Agendamento</div>
+      ${b.psychName ? `<div style="font-size:13px;opacity:0.85;margin-bottom:4px">👩‍⚕️ ${b.psychName}</div>` : ''}
       <div class="booking-banner-date">${fmtDate(b.date)}</div>
       <div class="booking-banner-time">🕐 ${b.time}</div>
       <button class="btn-cancel-booking" id="btn-cancel-my">Cancelar Agendamento</button>
@@ -486,8 +542,9 @@ function renderSuccess() {
   return `<div class="container" style="margin-top:32px"><div class="card"><div class="card-body success-screen">
     <div class="success-icon">✅</div>
     <div class="success-title">Agendado com Sucesso!</div>
-    <div class="success-sub">Seu horário com ${NOME_PSICOLOGA} foi reservado.</div>
+    <div class="success-sub">Seu horário foi reservado.</div>
     <div class="success-details">
+      ${s.psychName ? `<div class="success-details-row">👩‍⚕️ ${s.psychName}</div>` : ''}
       <div class="success-details-row">📅 ${fmtDate(s.date)}</div>
       <div class="success-details-row">🕐 ${s.time}</div>
     </div>
@@ -497,7 +554,24 @@ function renderSuccess() {
 
 // ─── Bind ──────────────────────────────────────────────────────
 function bindApp() {
-  el('btn-home')?.addEventListener('click', () => { appState.view = 'calendar'; appState.successData = null; render(); });
+  // Seleção de psicóloga
+  document.querySelectorAll('.psych-card').forEach(card => {
+    card.addEventListener('mouseenter', () => { card.style.borderColor = 'var(--primary)'; card.style.boxShadow = '0 4px 20px rgba(92,107,192,0.25)'; });
+    card.addEventListener('mouseleave', () => { card.style.borderColor = 'transparent'; card.style.boxShadow = '0 2px 12px rgba(0,0,0,0.08)'; });
+    card.addEventListener('click', async () => {
+      appState.selectedPsych = { id: parseInt(card.dataset.psychId), name: card.dataset.psychName };
+      appState.view = 'calendar';
+      appState.selectedDate = null;
+      appState.slots = [];
+      await loadInitial();
+    });
+  });
+
+  el('btn-home')?.addEventListener('click', () => {
+    // Volta para escolha de psicóloga
+    appState.view = 'choose_psych'; appState.successData = null; appState.selectedDate = null; appState.slots = [];
+    render();
+  });
   el('btn-cancel-my')?.addEventListener('click', () => { appState.cancelModal = true; render(); });
   el('cancel-back')?.addEventListener('click',    () => { appState.cancelModal = false; render(); });
   el('cancel-confirm')?.addEventListener('click', cancelBooking);
@@ -531,7 +605,10 @@ function bindApp() {
 
 // ─── Init ──────────────────────────────────────────────────────
 render();
-if (session) loadInitial();
+if (session) {
+  // Se já tem sessão ativa, mostra tela de escolha de psicóloga
+  loadPsychologists().then(() => { appState.view = 'choose_psych'; render(); });
+}
 </script>
 </body>
 </html>
