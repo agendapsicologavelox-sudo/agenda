@@ -167,6 +167,12 @@ if (SUPABASE_URL === 'COLE_AQUI_SUA_SUPABASE_URL') {
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ─── SHA-256 ──────────────────────────────────────────────────
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
 // ─── Estado ───────────────────────────────────────────────────
 let session  = JSON.parse(localStorage.getItem('ag_session') || 'null');
 let appState = {
@@ -331,11 +337,15 @@ function renderLogin() {
       <div class="login-subtitle">Agendamento com ${NOME_PSICOLOGA}</div>
       <div class="login-box">
         <h2>Bem-vindo</h2>
-        <p>Digite o código de acesso fornecido pela empresa</p>
+        <p>Digite seu e-mail e senha para acessar</p>
         <div id="login-error" class="alert alert-error" style="display:none"></div>
-        <div style="margin-bottom:16px">
-          <label class="form-label">Código de Acesso</label>
-          <input id="login-code" class="form-input" type="text" placeholder="Ex: ABC123" autocomplete="off" maxlength="20">
+        <div style="margin-bottom:14px">
+          <label class="form-label">E-mail</label>
+          <input id="login-email" class="form-input" type="email" placeholder="seu@email.com" autocomplete="email" style="letter-spacing:normal;text-transform:none">
+        </div>
+        <div style="margin-bottom:20px">
+          <label class="form-label">Senha</label>
+          <input id="login-pass" class="form-input" type="password" placeholder="Sua senha" autocomplete="current-password" style="letter-spacing:normal;text-transform:none">
         </div>
         <button id="login-btn" class="btn btn-primary">Entrar</button>
       </div>
@@ -344,16 +354,20 @@ function renderLogin() {
 }
 
 function bindLogin() {
-  const btn = el('login-btn'), input = el('login-code'), errBox = el('login-error');
+  const btn = el('login-btn'), errBox = el('login-error');
   async function doLogin() {
-    const code = input.value.trim().toUpperCase();
-    if (!code) return;
+    const email = el('login-email').value.trim().toLowerCase();
+    const pass  = el('login-pass').value;
+    if (!email || !pass) return;
     btn.disabled = true; btn.textContent = 'Verificando...'; errBox.style.display = 'none';
     try {
+      const hash = await sha256(pass);
       const { data, error } = await sb.from('access_codes')
-        .select('id,name,email').eq('code', code).eq('active', true).maybeSingle();
+        .select('id,name,email,password_hash').eq('email', email).eq('active', true).maybeSingle();
       if (error) throw new Error(error.message);
-      if (!data) throw new Error('Código inválido ou inativo. Verifique com o RH.');
+      if (!data) throw new Error('E-mail não encontrado ou conta inativa.');
+      if (!data.password_hash) throw new Error('Senha não configurada. Fale com o RH.');
+      if (data.password_hash !== hash) throw new Error('Senha incorreta.');
       session = { codeId: data.id, name: data.name, email: data.email };
       localStorage.setItem('ag_session', JSON.stringify(session));
       appState.loading = true; render();
@@ -367,8 +381,10 @@ function bindLogin() {
     }
   }
   btn.addEventListener('click', doLogin);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  setTimeout(() => input.focus(), 100);
+  el('login-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') el('login-pass')?.focus(); });
+  el('login-pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  btn.addEventListener('click', doLogin);
+  setTimeout(() => el('login-email')?.focus(), 100);
 }
 
 // ─── APP ──────────────────────────────────────────────────────
