@@ -173,6 +173,7 @@ let st = {
   showCodeModal: false, newCode: { code:'', name:'', email:'' },
   showPassModal: false,
   showMedicaModal: false, newMedica: { id: null, name:'', specialty:'Psicóloga', monthly_limit: 25 },
+  resetPassTarget: null,
 };
 
 function logout() { sessionStorage.removeItem('ag_admin'); adminLoggedIn = false; render(); }
@@ -223,7 +224,7 @@ async function loadBookings() {
 async function loadCodes() {
   st.loading = true; render();
   const { data, error } = await sb.from('access_codes')
-    .select('id,code,name,email,active,created_at,bookings(id)')
+    .select('id,code,name,email,active,password_hash,created_at,bookings(id)')
     .order('name');
   if (error) st.error = error.message;
   else st.codes = (data || []).map(c => ({ ...c, hasBooking: c.bookings?.length > 0 }));
@@ -325,10 +326,11 @@ function renderLayout() {
         ${main}
       </div>
     </div>
-    ${st.confirmDelete    ? renderDeleteModal()  : ''}
-    ${st.showCodeModal    ? renderCodeModal()    : ''}
-    ${st.showPassModal    ? renderPassModal()    : ''}
-    ${st.showMedicaModal  ? renderMedicaModal()  : ''}
+    ${st.confirmDelete    ? renderDeleteModal()    : ''}
+    ${st.showCodeModal    ? renderCodeModal()      : ''}
+    ${st.showPassModal    ? renderPassModal()      : ''}
+    ${st.showMedicaModal  ? renderMedicaModal()    : ''}
+    ${st.resetPassTarget  ? renderResetPassModal() : ''}
   `;
 }
 
@@ -520,31 +522,32 @@ function renderBookingsTab() {
   `;
 }
 
-// ── Códigos ──
+// ── Colaboradores ──
 function renderCodesTab() {
   if (st.loading) return `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
   const rows = st.codes.map(c => `<tr>
-    <td><code style="background:var(--primary-light);padding:3px 8px;border-radius:6px;font-size:13px">${c.code}</code></td>
     <td><strong>${c.name}</strong></td>
     <td>${c.email}</td>
+    <td>${c.password_hash ? '<span class="badge badge-green">✅ Definida</span>' : '<span class="badge badge-red">⚠️ Sem senha</span>'}</td>
     <td>${c.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-red">Inativo</span>'}</td>
     <td>${c.hasBooking ? '<span class="badge badge-blue">Sim</span>' : '<span class="badge badge-gray">Não</span>'}</td>
-    <td><div style="display:flex;gap:6px">
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" data-reset-pass="${c.id}" data-collab-name="${c.name}">🔑 Senha</button>
       <button class="btn btn-outline btn-sm" data-toggle="${c.id}" data-active="${c.active}">${c.active ? '⏸ Desativar' : '▶ Ativar'}</button>
-      <button class="btn btn-danger btn-sm" data-del-code="${c.id}" data-lbl="${c.name} (${c.code})">🗑️</button>
+      <button class="btn btn-danger btn-sm" data-del-code="${c.id}" data-lbl="${c.name}">🗑️</button>
     </div></td>
   </tr>`).join('');
 
   return `
-    <h2 style="margin-bottom:20px">🔑 Códigos de Acesso</h2>
+    <h2 style="margin-bottom:20px">👥 Colaboradores</h2>
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Total: ${st.codes.length} código(s)</span>
-        <button class="btn btn-primary" id="btn-new-code">+ Novo Código</button>
+        <span class="card-title">Total: ${st.codes.length} colaborador(es)</span>
+        <button class="btn btn-primary" id="btn-new-code">+ Novo Colaborador</button>
       </div>
       ${st.codes.length===0
-        ? '<div class="empty-state"><div class="empty-state-icon">🔑</div><div>Nenhum código cadastrado ainda.</div></div>'
-        : `<div class="table-wrap"><table><thead><tr><th>Código</th><th>Nome</th><th>E-mail</th><th>Status</th><th>Agendou?</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+        ? '<div class="empty-state"><div class="empty-state-icon">👥</div><div>Nenhum colaborador cadastrado ainda.</div></div>'
+        : `<div class="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Senha</th><th>Status</th><th>Agendou?</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`}
     </div>
   `;
 }
@@ -566,24 +569,39 @@ function renderDeleteModal() {
 function renderCodeModal() {
   const c = st.newCode;
   return `<div class="modal-overlay"><div class="modal">
-    <div class="modal-title">➕ Novo Código</div>
+    <div class="modal-title">➕ Novo Colaborador</div>
     <div id="code-err" class="alert alert-error" style="display:none"></div>
     <div class="form-group" style="margin-bottom:12px">
-      <label class="form-label">Código de Acesso</label>
-      <input id="nc-code" class="form-input" style="width:100%;letter-spacing:2px;text-transform:uppercase" type="text" placeholder="Ex: ABC123" maxlength="20" value="${c.code}">
-      <span style="font-size:11px;color:var(--text-secondary)">Letras e números, sem espaços</span>
-    </div>
-    <div class="form-group" style="margin-bottom:12px">
-      <label class="form-label">Nome do Colaborador</label>
+      <label class="form-label">Nome Completo</label>
       <input id="nc-name" class="form-input" style="width:100%" type="text" placeholder="Nome Completo" value="${c.name}">
     </div>
-    <div class="form-group" style="margin-bottom:16px">
+    <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">E-mail</label>
       <input id="nc-email" class="form-input" style="width:100%" type="email" placeholder="email@empresa.com" value="${c.email}">
     </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Senha</label>
+      <input id="nc-pass" class="form-input" style="width:100%" type="password" placeholder="Mínimo 6 caracteres">
+      <span style="font-size:11px;color:var(--text-secondary)">O colaborador usará este e-mail e senha para entrar</span>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-outline" id="code-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="code-save">✅ Criar</button>
+      <button class="btn btn-primary" id="code-save">✅ Cadastrar</button>
+    </div>
+  </div></div>`;
+}
+
+function renderResetPassModal() {
+  return `<div class="modal-overlay"><div class="modal">
+    <div class="modal-title">🔑 Redefinir Senha — ${st.resetPassTarget?.name}</div>
+    <div id="rp-err" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Nova Senha (mín. 6 caracteres)</label>
+      <input id="rp-pass" class="form-input" style="width:100%" type="password" placeholder="Nova senha">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="rp-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="rp-save">💾 Salvar</button>
     </div>
   </div></div>`;
 }
@@ -674,7 +692,7 @@ function bindLayout() {
     st.confirmDelete = { type:'booking', id:b.dataset.delBooking, label:b.dataset.lbl }; render();
   }));
 
-  // Codes
+  // Colaboradores
   el('btn-new-code')?.addEventListener('click', () => { st.showCodeModal = true; st.newCode = {code:'',name:'',email:''}; render(); });
   document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
     const active = b.dataset.active === 'true';
@@ -684,6 +702,21 @@ function bindLayout() {
   document.querySelectorAll('[data-del-code]').forEach(b => b.addEventListener('click', () => {
     st.confirmDelete = { type:'code', id:b.dataset.delCode, label:b.dataset.lbl }; render();
   }));
+  document.querySelectorAll('[data-reset-pass]').forEach(b => b.addEventListener('click', () => {
+    st.resetPassTarget = { id: b.dataset.resetPass, name: b.dataset.collabName }; render();
+  }));
+
+  // Modal redefinir senha colaborador
+  el('rp-cancel')?.addEventListener('click', () => { st.resetPassTarget = null; render(); });
+  el('rp-save')?.addEventListener('click', async () => {
+    const newPass = el('rp-pass').value;
+    const err = el('rp-err');
+    if (newPass.length < 6) { err.style.display='block'; err.textContent='❌ Mínimo 6 caracteres.'; return; }
+    const hash = await sha256(newPass);
+    const { error } = await sb.from('access_codes').update({ password_hash: hash }).eq('id', st.resetPassTarget.id);
+    if (error) { err.style.display='block'; err.textContent='❌ '+error.message; return; }
+    st.resetPassTarget = null; st.success = 'Senha redefinida com sucesso!'; await loadCodes();
+  });
 
   // Modal exclusão
   el('del-cancel')?.addEventListener('click', () => { st.confirmDelete = null; render(); });
@@ -702,14 +735,17 @@ function bindLayout() {
   // Modal novo código
   el('code-cancel')?.addEventListener('click', () => { st.showCodeModal = false; render(); });
   el('code-save')?.addEventListener('click', async () => {
-    const code = el('nc-code').value.trim().toUpperCase();
-    const name = el('nc-name').value.trim();
+    const name  = el('nc-name').value.trim();
     const email = el('nc-email').value.trim().toLowerCase();
-    const err = el('code-err');
-    if (!code||!name||!email) { err.style.display='block'; err.textContent='❌ Preencha todos os campos.'; return; }
-    const { error } = await sb.from('access_codes').insert({ code, name, email });
-    if (error) { err.style.display='block'; err.textContent='❌ '+(error.code==='23505'?'Código já existe.':error.message); return; }
-    st.showCodeModal = false; st.success = `Código criado para ${name}.`; await loadCodes();
+    const pass  = el('nc-pass').value;
+    const err   = el('code-err');
+    if (!name||!email) { err.style.display='block'; err.textContent='❌ Preencha nome e e-mail.'; return; }
+    if (pass && pass.length < 6) { err.style.display='block'; err.textContent='❌ Senha mínimo 6 caracteres.'; return; }
+    const code = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g,'') + Math.floor(Math.random()*9000+1000);
+    const password_hash = pass ? await sha256(pass) : null;
+    const { error } = await sb.from('access_codes').insert({ code, name, email, password_hash });
+    if (error) { err.style.display='block'; err.textContent='❌ '+(error.code==='23505'?'E-mail já cadastrado.':error.message); return; }
+    st.showCodeModal = false; st.success = `${name} cadastrado(a)!`; await loadCodes();
   });
 
   // Modal alterar senha
